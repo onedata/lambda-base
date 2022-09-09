@@ -1,3 +1,6 @@
+__copyright__ = "Copyright (C) 2022 ACK CYFRONET AGH"
+__license__ = "MIT license cited in 'LICENSE.txt'."
+
 import json
 import os
 import sys
@@ -7,6 +10,8 @@ import time
 from contextlib import redirect_stdout, redirect_stderr
 import requests
 
+# handler is a module user provides when building final lambda image 
+# (using lambda-base as parent image)
 from function import handler
 
 
@@ -14,6 +19,8 @@ HEARTBEAT_INTERVAL_SEC: int = 60
 
 
 def heartbeat(url):
+    # IMPORTANT: first heatbeat must be sent immediately after spawn 
+    # to inform Oneprovider that given job began executing
     requests.post(url=url, data={})
 
     while True:
