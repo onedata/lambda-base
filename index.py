@@ -56,5 +56,5 @@ if __name__ == "__main__":
     try:
         result = handler.handle(request)
         print(json.dumps(result))
-    except ex:
+    except Exception as ex:
         print(json.dumps({"exception": str(ex)}))
