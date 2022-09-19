@@ -1,13 +1,21 @@
-REPO=docker.onedata.org/lambda-base
-TAG=v1
+SLIM_IMG=docker.onedata.org/lambda-base-slim:v1
+ONEDATAFS_IMG=docker.onedata.org/lambda-base-onedatafs:v1
 
 
-.PHONY: build publish
+.PHONY: build-slim publish-slim build-onedatafs publish-onedatafs
 
 
-build:
-	docker build . -t ${REPO}:${TAG}
+build-slim:
+	docker build . -f slim/Dockerfile -t ${SLIM_IMG}
 
 
-publish:
-	docker push ${REPO}:${TAG}
+publish-slim:
+	docker push ${SLIM_IMG}
+
+
+build-onedatafs:
+	docker build . -f onedatafs/Dockerfile -t ${ONEDATAFS_IMG}
+
+
+publish-onedatafs:
+	docker push ${ONEDATAFS_IMG}
