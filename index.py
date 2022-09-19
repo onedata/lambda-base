@@ -5,10 +5,8 @@ import io
 import json
 import os
 import sys
-import threading
 import time
 
-from contextlib import contextmanager
 import requests
 
 # handler is a module user provides when building final lambda image 
@@ -29,7 +27,6 @@ def handle_request(stdout):
         heartbeat()
 
         result = handler.handle(request, heartbeat)
-
         print(json.dumps(result), file=stdout)
 
     except Exception as ex:
