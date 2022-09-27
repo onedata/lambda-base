@@ -30,7 +30,9 @@ This is why the Dockerfile can be as simple as one line.
 def handle(request, heartbeat_callback):
     """Example 'echo' function returning its arguments."""
 
-    # periodically call heartbeat_callback for long running jobs
+    # periodically call heartbeat_callback for long running jobs. 
+    # Otherwise, if no heartbeat is sent for londer than 
+    # `request["ctx"]["timeoutSeconds"]`, job will be considered as dead
     heartbeat_callback()
 
     return {'resultsBatch': request['argsBatch']}
