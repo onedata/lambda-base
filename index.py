@@ -1,13 +1,12 @@
 __copyright__ = "Copyright (C) 2022 ACK CYFRONET AGH"
 __license__ = "MIT license cited in 'LICENSE.txt'."
 
+import io
 import json
 import os
 import sys
-import threading
 import time
 
-from contextlib import redirect_stdout, redirect_stderr
 import requests
 
 # handler is a module user provides when building final lambda image 
@@ -15,20 +14,55 @@ import requests
 from function import handler
 
 
-HEARTBEAT_INTERVAL_SEC: int = 60
+def handle_request():
+    # Redirect stdout/stderr to /dev/null to not incorporate accidental prints 
+    # into response (OpenFaaS treats anything written to stdout/stderr as part 
+    # of a response). 
+    devnull = open(os.devnull, 'w')
+    devnull_fd = devnull.fileno()
+
+    stdout_fd = sys.stdout.fileno()
+    stdout_fd_dup = os.dup(stdout_fd)
+    os.dup2(devnull_fd, stdout_fd)   # $ exec >&devnull_fd
+
+    stderr_fd = sys.stderr.fileno()
+    os.dup2(devnull_fd, stderr_fd)   # $ exec 2>&devnull_fd
+
+    stdout_dup = io.TextIOWrapper(os.fdopen(stdout_fd_dup, 'wb'))
+
+    try:
+        request = json.loads(read_stdin())
+        heartbeat_callback = build_heartbeat_callback(request["ctx"])
+
+        # IMPORTANT: first heatbeat must be sent immediately after spawn 
+        # to inform Oneprovider that given job began executing
+        heartbeat_callback()
+
+        result = handler.handle(request, heartbeat_callback)
+        print(json.dumps(result), file=stdout_dup)
+
+    except Exception as ex:
+        print(json.dumps({"exception": str(ex)}), file=stdout_dup)
 
 
-def heartbeat(url):
-    # IMPORTANT: first heatbeat must be sent immediately after spawn 
-    # to inform Oneprovider that given job began executing
-    requests.post(url=url, data={})
+def build_heartbeat_callback(ctx):
+    heartbeat_url = ctx["heartbeatUrl"]
+    throttle_period = 0.1 * ctx["timeoutSeconds"]
+    last_heartbeat_timestamp = 0
+    
+    def heartbeat():
+        nonlocal last_heartbeat_timestamp
 
-    while True:
-        time.sleep(HEARTBEAT_INTERVAL_SEC)
-        requests.post(url=url, data={})
+        current_time = int(time.time())
+        if current_time - last_heartbeat_timestamp > throttle_period:
+            r = requests.post(url=heartbeat_url, data={})
+            if r.ok:
+                last_heartbeat_timestamp = current_time
+
+    return heartbeat
 
 
-def get_stdin():
+def read_stdin():
     buf = ""
     while True:
         line = sys.stdin.readline()
@@ -40,21 +74,5 @@ def get_stdin():
     return buf
 
 
-def handle_request(request):
-    with open(os.devnull, 'w') as f, redirect_stdout(f), redirect_stderr(f):
-        return handler.handle(request)
-    
-
 if __name__ == "__main__":
-    request = json.loads(get_stdin())
-
-    heartbeat_cron = threading.Thread(target=heartbeat, 
-                                      args=[request["ctx"]["heartbeatUrl"]])
-    heartbeat_cron.daemon = True
-    heartbeat_cron.start()
-
-    try:
-        result = handler.handle(request)
-        print(json.dumps(result))
-    except Exception as ex:
-        print(json.dumps({"exception": str(ex)}))
+    handle_request()
