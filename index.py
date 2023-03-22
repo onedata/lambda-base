@@ -42,7 +42,7 @@ def handle_request():
         print(json.dumps(result), file=stdout_dup)
 
     except Exception as ex:
-        print(json.dumps({"exception": str(ex)}), file=stdout_dup)
+        print(json.dumps({"exception": traceback.format_exc()}), file=stdout_dup)
 
 
 def build_heartbeat_callback(ctx):
