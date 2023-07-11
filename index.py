@@ -12,11 +12,6 @@ from datetime import datetime
 
 import requests
 
-# handler is a module user provides when building final lambda image
-# (using lambda-base as parent image)
-from function import handler
-
-
 HEARTBEAT_TIMEOUT_SEC = 10
 
 FIRST_HEARTBEAT_RETRIES = 10
@@ -43,26 +38,44 @@ def handle_request():
 
     stdout_dup = io.TextIOWrapper(os.fdopen(stdout_fd_dup, "wb"))
 
-    trace_id = uuid.uuid4()
-    log(f"[INFO] Started request (id: {trace_id}) processing")
+    job_id = uuid.uuid4()
+    log("info", job_id, "Started request processing")
 
     try:
         request = json.loads(read_stdin())
-        heartbeat_callback = build_heartbeat_callback(request["ctx"])
+
+        log_level = request["ctx"].get("logLevel", "info")
+        os.environ["ATM_LOG_LEVEL"] = log_level
+
+        if log_level == "debug":
+            log("debug", job_id, f"Input: {request}")
+
+        heartbeat_callback = build_heartbeat_callback(job_id, request["ctx"])
 
         # IMPORTANT: first heatbeat must be sent immediately after spawn
         # to inform Oneprovider that given job began executing
-        ensure_first_heartbeat_delivered(heartbeat_callback)
+        ensure_first_heartbeat_delivered(job_id, heartbeat_callback)
 
-        log("[INFO] Calling handler callback")
+        log("info", job_id, "Calling handler callback")
+
+        # handler is a module user provides when building final lambda image
+        # (using lambda-base as parent image)
+        from function import handler
+
         result = handler.handle(request, heartbeat_callback)
-        log(f"[INFO] Ended request (id: {trace_id}) processing")
+
+        if log_level == "debug":
+            log("debug", job_id, f"Output: {request}")
+
+        log("info", job_id, "Ended request processing")
+
         print(json.dumps(result), file=stdout_dup)
 
     except FirstHeartbeatDeliveryFailedError:
         log(
-            f"[ERROR] Request (id: {trace_id}) processing failed due to "
-            "failure to deliver first heartbeat"
+            "error",
+            job_id,
+            f"Request processing failed due to failure to deliver first heartbeat",
         )
         print(
             json.dumps({"exception": "Failed to deliver first heartbeat"}),
@@ -71,13 +84,14 @@ def handle_request():
 
     except Exception as ex:
         log(
-            f"[ERROR] Request (id: {trace_id}) processing failed with "
-            "unexpected exception"
+            "error",
+            job_id,
+            f"Request processing failed with unexpected exception: {ex}",
         )
         print(json.dumps({"exception": traceback.format_exc()}), file=stdout_dup)
 
 
-def build_heartbeat_callback(ctx):
+def build_heartbeat_callback(job_id, ctx):
     heartbeat_url = ctx["heartbeatUrl"]
     throttle_period = 0.1 * ctx["timeoutSeconds"]
     last_heartbeat_timestamp = 0
@@ -90,21 +104,23 @@ def build_heartbeat_callback(ctx):
             r = requests.post(url=heartbeat_url, data={}, timeout=timeout)
             if r.ok:
                 last_heartbeat_timestamp = current_time
-                log("[INFO] Heartbeat sent")
+                log("info", job_id, "Heartbeat sent")
                 return True
             else:
                 log(
-                    f"[WARNING] Failed to send heartbeat due to:\n"
+                    "warning",
+                    job_id,
+                    f"Failed to send heartbeat due to:\n"
                     f"> response code: {r.status_code}\n"
-                    f"> response content: {r.content}"
+                    f"> response content: {r.content}",
                 )
                 return False
 
     return heartbeat
 
 
-def ensure_first_heartbeat_delivered(heartbeat_callback):
-    log("[INFO] Sending first heartbeat")
+def ensure_first_heartbeat_delivered(job_id, heartbeat_callback):
+    log("info", job_id, "Sending first heartbeat")
     for _ in range(FIRST_HEARTBEAT_RETRIES):
         if heartbeat_callback():
             break
@@ -114,8 +130,18 @@ def ensure_first_heartbeat_delivered(heartbeat_callback):
         raise FirstHeartbeatDeliveryFailedError
 
 
-def log(msg):
-    print(datetime.now().strftime("%m/%d/%Y, %H:%M:%S:%f"), msg)
+def log(severity, job_id, msg):
+    print(
+        "[",
+        severity.upper(),
+        " ",
+        datetime.now().strftime("%m/%d/%Y, %H:%M:%S:%f"),
+        " ",
+        job_id,
+        "] ",
+        msg,
+        sep="",
+    )
 
 
 def read_stdin():
