@@ -12,6 +12,8 @@ from datetime import datetime
 
 import requests
 
+VERIFY_SSL_CERTS = os.getenv("VERIFY_SSL_CERTIFICATES") != "false"
+
 HEARTBEAT_TIMEOUT_SEC = 10
 
 FIRST_HEARTBEAT_RETRIES = 10
@@ -101,7 +103,9 @@ def build_heartbeat_callback(job_id, ctx):
 
         current_time = int(time.time())
         if current_time - last_heartbeat_timestamp > throttle_period:
-            r = requests.post(url=heartbeat_url, data={}, timeout=timeout)
+            r = requests.post(
+                url=heartbeat_url, data={}, timeout=timeout, verify=VERIFY_SSL_CERTS
+            )
             if r.ok:
                 last_heartbeat_timestamp = current_time
                 log("info", job_id, "Heartbeat sent")
