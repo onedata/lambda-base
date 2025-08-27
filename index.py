@@ -13,6 +13,9 @@ from datetime import datetime
 import requests
 
 VERIFY_SSL_CERTS = os.getenv("VERIFY_SSL_CERTIFICATES") != "false"
+DEBUG_MODE = os.getenv("OPENFAAS_FUNCTION_DEBUG_MODE") != "false"
+ONECLIENT_MOUNTED = os.getenv("ONECLIENT_MOUNTED") != "false"
+ONECLIENT_MOUNT_POINT = os.getenv("ONECLIENT_MOUNT_POINT")
 
 HEARTBEAT_TIMEOUT_SEC = 10
 
@@ -43,7 +46,36 @@ def handle_request():
     job_id = uuid.uuid4()
     log("info", job_id, "Started request processing")
 
+    if DEBUG_MODE:
+        log("debug", job_id, "Lambda is running in debug mode.")
+
+
     try:
+        # wait for oneclient mounting
+        if ONECLIENT_MOUNTED:
+            log(
+                "info",
+                job_id,
+                f"Oneclient mount point used in this lambda: {ONECLIENT_MOUNT_POINT}.")
+            mount_point_content = os.listdir(ONECLIENT_MOUNT_POINT)
+            # wait up to 2 mins
+            retries = 2 * 60 * 2
+            while not any(mount_point_content) and retries > 0:
+                time.sleep(0.5)
+                mount_point_content = os.listdir(ONECLIENT_MOUNT_POINT)
+                retries -= 1
+            if not any(mount_point_content):
+                log("error", job_id, f"Did not manage to mount oneclient.")
+            else:
+                log(
+                    "info",
+                    job_id,
+                    f"Oneclient mount point content: {mount_point_content}"
+                )
+        else:
+            log("info", job_id, "This lambda does not mount oneclient.")
+
+
         request = json.loads(read_stdin())
 
         log_level = request["ctx"].get("logLevel", "info")
