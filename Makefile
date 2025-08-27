@@ -1,4 +1,4 @@
-SLIM_IMG=docker.onedata.org/lambda-base-slim:v1
+SLIM_IMG=docker.onedata.org/lambda-base-slim:v2-dev
 ONEDATAFS_IMG=docker.onedata.org/lambda-base-onedatafs:v1
 
 
