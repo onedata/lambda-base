@@ -22,9 +22,20 @@ HEARTBEAT_TIMEOUT_SEC = 10
 FIRST_HEARTBEAT_RETRIES = 10
 FIRST_HEARTBEAT_RETRY_DELAY_SEC = 5
 
+MOUNT_POINT_TIMEOUT = 120
+MOUNT_POINT_TIMEOUT_INTERVAL = 0.5
 
 class FirstHeartbeatDeliveryFailedError(Exception):
     pass
+
+def await_oneclient_mounted():
+    retries = int(MOUNT_POINT_TIMEOUT / MOUNT_POINT_TIMEOUT_INTERVAL)
+    mount_point_content = os.listdir(ONECLIENT_MOUNT_POINT)
+    while not any(mount_point_content) and retries > 0:
+        time.sleep(MOUNT_POINT_TIMEOUT_INTERVAL)
+        mount_point_content = os.listdir(ONECLIENT_MOUNT_POINT)
+        retries -= 1
+    return any(mount_point_content)
 
 
 def handle_request():
@@ -57,20 +68,14 @@ def handle_request():
                 "info",
                 job_id,
                 f"Oneclient mount point used in this lambda: {ONECLIENT_MOUNT_POINT}.")
-            mount_point_content = os.listdir(ONECLIENT_MOUNT_POINT)
-            # wait up to 2 mins
-            retries = 2 * 60 * 2
-            while not any(mount_point_content) and retries > 0:
-                time.sleep(0.5)
-                mount_point_content = os.listdir(ONECLIENT_MOUNT_POINT)
-                retries -= 1
-            if not any(mount_point_content):
+
+            if not await_oneclient_mounted():
                 log("error", job_id, f"Did not manage to mount oneclient.")
             else:
                 log(
                     "info",
                     job_id,
-                    f"Oneclient mount point content: {mount_point_content}"
+                    f"Oneclient mount point content: {os.listdir(ONECLIENT_MOUNT_POINT)}"
                 )
         else:
             log("info", job_id, "This lambda does not mount oneclient.")
