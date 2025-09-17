@@ -12,9 +12,9 @@ from datetime import datetime
 
 import requests
 
-VERIFY_SSL_CERTS = os.getenv("VERIFY_SSL_CERTIFICATES") != "false"
-DEBUG_MODE = os.getenv("OPENFAAS_FUNCTION_DEBUG_MODE") != "false"
-ONECLIENT_MOUNTED = os.getenv("ONECLIENT_MOUNTED") != "false"
+VERIFY_SSL_CERTS = os.getenv("VERIFY_SSL_CERTIFICATES") == "true"
+DEBUG_MODE = os.getenv("OPENFAAS_FUNCTION_DEBUG_MODE") == "true"
+ONECLIENT_MOUNTED = os.getenv("ONECLIENT_MOUNTED") == "true"
 ONECLIENT_MOUNT_POINT = os.getenv("ONECLIENT_MOUNT_POINT")
 
 HEARTBEAT_TIMEOUT_SEC = 10
@@ -28,14 +28,8 @@ MOUNT_POINT_TIMEOUT_INTERVAL = 0.5
 class FirstHeartbeatDeliveryFailedError(Exception):
     pass
 
-def await_oneclient_mounted():
-    retries = int(MOUNT_POINT_TIMEOUT / MOUNT_POINT_TIMEOUT_INTERVAL)
-    mount_point_content = os.listdir(ONECLIENT_MOUNT_POINT)
-    while not any(mount_point_content) and retries > 0:
-        time.sleep(MOUNT_POINT_TIMEOUT_INTERVAL)
-        mount_point_content = os.listdir(ONECLIENT_MOUNT_POINT)
-        retries -= 1
-    return any(mount_point_content)
+class OneclientMountError(Exception):
+    pass
 
 
 def handle_request():
@@ -58,7 +52,7 @@ def handle_request():
     log("info", job_id, "Started request processing")
 
     if DEBUG_MODE:
-        log("debug", job_id, "Lambda is running in debug mode.")
+        log("debug", job_id, "Lambda is running in debug mode")
 
 
     try:
@@ -67,10 +61,11 @@ def handle_request():
             log(
                 "info",
                 job_id,
-                f"Oneclient mount point used in this lambda: {ONECLIENT_MOUNT_POINT}.")
+                f"This lambda is using Oneclient; mountpoint: {ONECLIENT_MOUNT_POINT}")
 
             if not await_oneclient_mounted():
-                log("error", job_id, f"Did not manage to mount oneclient.")
+                log("error", job_id, f"Did not manage to mount Oneclient")
+                raise OneclientMountError
             else:
                 log(
                     "info",
@@ -78,7 +73,7 @@ def handle_request():
                     f"Oneclient mount point content: {os.listdir(ONECLIENT_MOUNT_POINT)}"
                 )
         else:
-            log("info", job_id, "This lambda does not mount oneclient.")
+            log("info", job_id, "This lambda is not using Oneclient")
 
 
         request = json.loads(read_stdin())
@@ -169,6 +164,16 @@ def ensure_first_heartbeat_delivered(job_id, heartbeat_callback):
         time.sleep(FIRST_HEARTBEAT_RETRY_DELAY_SEC)
     else:
         raise FirstHeartbeatDeliveryFailedError
+
+
+def await_oneclient_mounted():
+    retries = int(MOUNT_POINT_TIMEOUT / MOUNT_POINT_TIMEOUT_INTERVAL)
+    mount_point_content = os.listdir(ONECLIENT_MOUNT_POINT)
+    while not any(mount_point_content) and retries > 0:
+        time.sleep(MOUNT_POINT_TIMEOUT_INTERVAL)
+        mount_point_content = os.listdir(ONECLIENT_MOUNT_POINT)
+        retries -= 1
+    return any(mount_point_content)
 
 
 def log(severity, job_id, msg):
