@@ -100,6 +100,14 @@ def handle_request():
             file=stdout_dup,
         )
 
+    except OneclientMountError:
+        log(
+            "error",
+            job_id,
+            f"Request processing failed due to failure to mount Oneclient",
+        )
+        print(json.dumps({"exception": "Failed to mount Oneclient"}), file=stdout_dup)
+
     except Exception as ex:
         log(
             "error",
