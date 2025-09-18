@@ -10,7 +10,9 @@ RUN chmod +x /usr/bin/fwatchdog
 RUN addgroup --system app && adduser --system --ingroup app app
 
 RUN mkdir -p /home/app/python && \
-    chown -R app:app /home/app/python
+    chown -R app:app /home/app
+
+USER app
 
 ENV PATH=$PATH:/home/app/.local/bin:/home/app/python/bin/
 ENV PYTHONPATH=$PYTHONPATH:/home/app/python
@@ -26,8 +28,6 @@ RUN mkdir -p function && touch ./function/__init__.py
 # ('*' regex hack prevent build failure if file does not exist)
 ONBUILD COPY --chown=app:app handler.py *requirements.txt function/
 ONBUILD RUN if [ -e function/requirements.txt ]; then python3 -m pip install --no-cache-dir -r function/requirements.txt -t /home/app/python; else echo "No additional dependencies specified"; fi
-
-USER app
 
 ENV fprocess="python3 index.py"
 EXPOSE 8080

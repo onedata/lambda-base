@@ -25,8 +25,10 @@ FIRST_HEARTBEAT_RETRY_DELAY_SEC = 5
 MOUNT_POINT_TIMEOUT = 120
 MOUNT_POINT_TIMEOUT_INTERVAL = 0.5
 
+
 class FirstHeartbeatDeliveryFailedError(Exception):
     pass
+
 
 class OneclientMountError(Exception):
     pass
@@ -54,27 +56,9 @@ def handle_request():
     if DEBUG_MODE:
         log("debug", job_id, "Lambda is running in debug mode")
 
-
     try:
-        # wait for oneclient mounting
-        if ONECLIENT_MOUNTED:
-            log(
-                "info",
-                job_id,
-                f"This lambda is using Oneclient; mountpoint: {ONECLIENT_MOUNT_POINT}")
 
-            if not await_oneclient_mounted():
-                log("error", job_id, f"Did not manage to mount Oneclient")
-                raise OneclientMountError
-            else:
-                log(
-                    "info",
-                    job_id,
-                    f"Oneclient mount point content: {os.listdir(ONECLIENT_MOUNT_POINT)}"
-                )
-        else:
-            log("info", job_id, "This lambda is not using Oneclient")
-
+        validate_oneclient_mount(job_id)
 
         request = json.loads(read_stdin())
 
@@ -166,14 +150,39 @@ def ensure_first_heartbeat_delivered(job_id, heartbeat_callback):
         raise FirstHeartbeatDeliveryFailedError
 
 
+def validate_oneclient_mount(job_id):
+    if ONECLIENT_MOUNTED:
+        log(
+            "info",
+            job_id,
+            f"This lambda is using Oneclient; mountpoint: {ONECLIENT_MOUNT_POINT}",
+        )
+        # wait for oneclient mounting
+        if not await_oneclient_mounted():
+            log("error", job_id, f"Did not manage to mount Oneclient")
+            raise OneclientMountError
+        else:
+            log(
+                "info",
+                job_id,
+                f"Oneclient mount point content: {os.listdir(ONECLIENT_MOUNT_POINT)}",
+            )
+    else:
+        log("info", job_id, "This lambda is not using Oneclient")
+
+
 def await_oneclient_mounted():
     retries = int(MOUNT_POINT_TIMEOUT / MOUNT_POINT_TIMEOUT_INTERVAL)
-    mount_point_content = os.listdir(ONECLIENT_MOUNT_POINT)
-    while not any(mount_point_content) and retries > 0:
+    mount_point_content = list_mountpoint()
+    while not mount_point_content and retries > 0:
         time.sleep(MOUNT_POINT_TIMEOUT_INTERVAL)
-        mount_point_content = os.listdir(ONECLIENT_MOUNT_POINT)
+        mount_point_content = list_mountpoint()
         retries -= 1
     return any(mount_point_content)
+
+
+def list_mountpoint():
+    return os.listdir(ONECLIENT_MOUNT_POINT)
 
 
 def log(severity, job_id, msg):
