@@ -173,7 +173,7 @@ def validate_oneclient_mount(job_id):
             log(
                 "info",
                 job_id,
-                f"Oneclient mount point content: {os.listdir(ONECLIENT_MOUNT_POINT)}",
+                f"Oneclient mount point content: {list_mountpoint()}",
             )
     else:
         log("info", job_id, "This lambda is not using Oneclient")
