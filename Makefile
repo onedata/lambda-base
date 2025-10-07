@@ -43,3 +43,15 @@ build-onedatafs-public:
 
 publish-onedatafs-public:
 	docker push ${ONEDATAFS_IMG_PUBLIC}
+
+
+UID := $(shell id -u)
+GID := $(shell id -g)
+
+define docker_run
+	docker run --rm -i -v $(CURDIR):$(CURDIR) -w $(CURDIR) -u $(UID):$(GID) $(STATIC_ANALYSER_IMAGE) $1
+endef
+
+format:
+	$(docker_run) isort .
+	$(docker_run) black .
