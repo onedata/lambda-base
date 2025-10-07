@@ -9,9 +9,10 @@ RUN chmod +x /usr/bin/fwatchdog
 # Add non root user
 RUN addgroup --system app && adduser --system --ingroup app app
 
-USER app
+RUN mkdir -p /home/app/python && \
+    chown -R app:app /home/app
 
-RUN mkdir -p /home/app/python
+USER app
 
 ENV PATH=$PATH:/home/app/.local/bin:/home/app/python/bin/
 ENV PYTHONPATH=$PYTHONPATH:/home/app/python

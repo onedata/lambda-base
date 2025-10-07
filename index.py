@@ -12,15 +12,25 @@ from datetime import datetime
 
 import requests
 
-VERIFY_SSL_CERTS = os.getenv("VERIFY_SSL_CERTIFICATES") != "false"
+VERIFY_SSL_CERTS = os.getenv("VERIFY_SSL_CERTIFICATES") == "true"
+DEBUG_MODE = os.getenv("OPENFAAS_FUNCTION_DEBUG_MODE") == "true"
+ONECLIENT_MOUNTED = os.getenv("ONECLIENT_MOUNTED") == "true"
+ONECLIENT_MOUNT_POINT = os.getenv("ONECLIENT_MOUNT_POINT")
 
 HEARTBEAT_TIMEOUT_SEC = 10
 
 FIRST_HEARTBEAT_RETRIES = 10
 FIRST_HEARTBEAT_RETRY_DELAY_SEC = 5
 
+MOUNT_POINT_TIMEOUT = 120
+MOUNT_POINT_TIMEOUT_INTERVAL = 0.5
+
 
 class FirstHeartbeatDeliveryFailedError(Exception):
+    pass
+
+
+class OneclientMountError(Exception):
     pass
 
 
@@ -43,7 +53,13 @@ def handle_request():
     job_id = uuid.uuid4()
     log("info", job_id, "Started request processing")
 
+    if DEBUG_MODE:
+        log("debug", job_id, "Lambda is running in debug mode")
+
     try:
+
+        validate_oneclient_mount(job_id)
+
         request = json.loads(read_stdin())
 
         log_level = request["ctx"].get("logLevel", "info")
@@ -83,6 +99,14 @@ def handle_request():
             json.dumps({"exception": "Failed to deliver first heartbeat"}),
             file=stdout_dup,
         )
+
+    except OneclientMountError:
+        log(
+            "error",
+            job_id,
+            f"Request processing failed due to failure to mount Oneclient",
+        )
+        print(json.dumps({"exception": "Failed to mount Oneclient"}), file=stdout_dup)
 
     except Exception as ex:
         log(
@@ -132,6 +156,41 @@ def ensure_first_heartbeat_delivered(job_id, heartbeat_callback):
         time.sleep(FIRST_HEARTBEAT_RETRY_DELAY_SEC)
     else:
         raise FirstHeartbeatDeliveryFailedError
+
+
+def validate_oneclient_mount(job_id):
+    if ONECLIENT_MOUNTED:
+        log(
+            "info",
+            job_id,
+            f"This lambda is using Oneclient; mountpoint: {ONECLIENT_MOUNT_POINT}",
+        )
+        # wait for oneclient mounting
+        if not await_oneclient_mounted():
+            log("error", job_id, f"Did not manage to mount Oneclient")
+            raise OneclientMountError
+        else:
+            log(
+                "info",
+                job_id,
+                f"Oneclient mount point content: {list_mountpoint()}",
+            )
+    else:
+        log("info", job_id, "This lambda is not using Oneclient")
+
+
+def await_oneclient_mounted():
+    retries = int(MOUNT_POINT_TIMEOUT / MOUNT_POINT_TIMEOUT_INTERVAL)
+    mount_point_content = list_mountpoint()
+    while not mount_point_content and retries > 0:
+        time.sleep(MOUNT_POINT_TIMEOUT_INTERVAL)
+        mount_point_content = list_mountpoint()
+        retries -= 1
+    return any(mount_point_content)
+
+
+def list_mountpoint():
+    return os.listdir(ONECLIENT_MOUNT_POINT)
 
 
 def log(severity, job_id, msg):
