@@ -1,33 +1,45 @@
-SLIM_IMG=docker.onedata.org/lambda-base-slim:v2
-ONEDATAFS_IMG=docker.onedata.org/lambda-base-onedatafs:v1
+SLIM_IMG_TAG=v2
+ONEDATAFS_IMAGE_TAG=v1
+
+SLIM_IMG_DEV=docker.onedata.org/lambda-base-slim:$(SLIM_IMG_TAG)
+ONEDATAFS_IMG_DEV=docker.onedata.org/lambda-base-onedatafs:$(ONEDATAFS_IMAGE_TAG)
+
+SLIM_IMG_PUBLIC=onedata/lambda-base-slim:$(SLIM_IMG_TAG)
+ONEDATAFS_IMG_PUBLIC=onedata/lambda-base-onedatafs:$(ONEDATAFS_IMAGE_TAG)
+
 STATIC_ANALYSER_IMAGE=docker.onedata.org/python_static_analyser:v8
 
 
 .PHONY: build-slim publish-slim build-onedatafs publish-onedatafs
 
 
-build-slim:
-	docker build . -f slim/Dockerfile -t ${SLIM_IMG}
+build-slim-dev:
+	docker build . -f slim/Dockerfile -t ${SLIM_IMG_DEV}
 
 
-publish-slim:
-	docker push ${SLIM_IMG}
+publish-slim-dev:
+	docker push ${SLIM_IMG_DEV}
 
 
-build-onedatafs:
-	docker build . -f onedatafs/Dockerfile -t ${ONEDATAFS_IMG}
+build-onedatafs-dev:
+	docker build . -f onedatafs/Dockerfile -t ${ONEDATAFS_IMG_DEV}
 
 
-publish-onedatafs:
-	docker push ${ONEDATAFS_IMG}
+publish-onedatafs-dev:
+	docker push ${ONEDATAFS_IMG_DEV}
 
-UID := $(shell id -u)
-GID := $(shell id -g)
 
-define docker_run
-	docker run --rm -i -v $(CURDIR):$(CURDIR) -w $(CURDIR) -u $(UID):$(GID) $(STATIC_ANALYSER_IMAGE) $1
-endef
+build-slim-public:
+	docker build . -f slim/Dockerfile -t ${SLIM_IMG_PUBLIC}
 
-format:
-	$(docker_run) isort .
-	$(docker_run) black .
+
+publish-slim-public:
+	docker push ${SLIM_IMG_PUBLIC}
+
+
+build-onedatafs-public:
+	docker build . -f onedatafs/Dockerfile -t ${ONEDATAFS_IMG_PUBLIC}
+
+
+publish-onedatafs-public:
+	docker push ${ONEDATAFS_IMG_PUBLIC}
