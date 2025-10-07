@@ -1,4 +1,4 @@
-SLIM_IMG=docker.onedata.org/lambda-base-slim:v2-dev
+SLIM_IMG=docker.onedata.org/lambda-base-slim:v2
 ONEDATAFS_IMG=docker.onedata.org/lambda-base-onedatafs:v1
 STATIC_ANALYSER_IMAGE=docker.onedata.org/python_static_analyser:v8
 
