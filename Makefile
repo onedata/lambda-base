@@ -1,16 +1,10 @@
-SLIM_IMG_TAG=v2
-ONEDATAFS_IMAGE_TAG=v1
+SLIM_IMG_TAG=v3
 
 SLIM_IMG_DEV=docker.onedata.org/lambda-base-slim:$(SLIM_IMG_TAG)
-ONEDATAFS_IMG_DEV=docker.onedata.org/lambda-base-onedatafs:$(ONEDATAFS_IMAGE_TAG)
-
 SLIM_IMG_PUBLIC=onedata/lambda-base-slim:$(SLIM_IMG_TAG)
-ONEDATAFS_IMG_PUBLIC=onedata/lambda-base-onedatafs:$(ONEDATAFS_IMAGE_TAG)
-
-STATIC_ANALYSER_IMAGE=docker.onedata.org/python_static_analyser:v8
 
 
-.PHONY: build-slim publish-slim build-onedatafs publish-onedatafs
+.PHONY: build-slim-dev publish-slim-dev build-slim-public publish-slim-public format lint
 
 
 build-slim-dev:
@@ -21,14 +15,6 @@ publish-slim-dev:
 	docker push ${SLIM_IMG_DEV}
 
 
-build-onedatafs-dev:
-	docker build . -f onedatafs/Dockerfile -t ${ONEDATAFS_IMG_DEV}
-
-
-publish-onedatafs-dev:
-	docker push ${ONEDATAFS_IMG_DEV}
-
-
 build-slim-public:
 	docker build . -f slim/Dockerfile -t ${SLIM_IMG_PUBLIC}
 
@@ -37,21 +23,13 @@ publish-slim-public:
 	docker push ${SLIM_IMG_PUBLIC}
 
 
-build-onedatafs-public:
-	docker build . -f onedatafs/Dockerfile -t ${ONEDATAFS_IMG_PUBLIC}
-
-
-publish-onedatafs-public:
-	docker push ${ONEDATAFS_IMG_PUBLIC}
-
-
-UID := $(shell id -u)
-GID := $(shell id -g)
-
-define docker_run
-	docker run --rm -i -v $(CURDIR):$(CURDIR) -w $(CURDIR) -u $(UID):$(GID) $(STATIC_ANALYSER_IMAGE) $1
-endef
-
+# Lint/format the repo's own Python (index.py + the build-lambda script) with ruff via
+# uvx, the same toolchain as onedata-lambda-utils. Config lives in ruff.toml.
 format:
-	$(docker_run) isort .
-	$(docker_run) black .
+	uvx ruff format .
+	uvx ruff check --fix .
+
+
+lint:
+	uvx ruff format --check .
+	uvx ruff check .

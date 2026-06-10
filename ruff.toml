@@ -1,0 +1,9 @@
+# Ruff config for lambda-base's own Python (index.py + the build-lambda script).
+# Mirrors onedata-lambda-utils so the whole v3 system shares one toolchain.
+line-length = 100
+target-version = "py312"
+# build-lambda is a Python script without a .py extension.
+extend-include = ["build-lambda"]
+
+[lint]
+select = ["E", "F", "I", "UP", "B"]
