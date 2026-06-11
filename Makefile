@@ -4,7 +4,7 @@ SLIM_IMG_DEV=docker.onedata.org/lambda-base-slim:$(SLIM_IMG_TAG)
 SLIM_IMG_PUBLIC=onedata/lambda-base-slim:$(SLIM_IMG_TAG)
 
 
-.PHONY: build-slim-dev publish-slim-dev build-slim-public publish-slim-public format lint
+.PHONY: build-slim-dev publish-slim-dev build-slim-public publish-slim-public format lint type-check
 
 
 build-slim-dev:
@@ -33,3 +33,9 @@ format:
 lint:
 	uvx ruff format --check .
 	uvx ruff check .
+
+
+# Type-check the repo's own Python with mypy. Config lives in mypy.ini; build-lambda is
+# an extensionless script so it's passed explicitly. Mirrors onedata-lambda-utils.
+type-check:
+	uvx mypy index.py build-lambda

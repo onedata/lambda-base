@@ -24,14 +24,14 @@ USER app
   empty/absent => single-lambda repo (the build-context root IS the package).
 
 What it does (build mode, must run as root):
-  1. Resolve the target lambda package's pyproject.toml (root, or the workspace member
-     whose [project].name matches the given package).
-  2. HARD-validate that the package declares exactly one `onedata.lambda` entry point.
-  3. HARD-require that the SDK (onedata-lambda-utils) is a declared dependency; fail if not
-     (the runtime contract lives in the SDK, so every built image must ship it).
-  4. Install declared system packages from `[tool.onedata.lambda] system-packages` via apt.
-  5. `uv sync --frozen --no-dev --no-editable [--package <name>]`, dropped to the
-     unprivileged `app` user via gosu so the resulting venv is owned by `app`.
+1. Resolve the target lambda package's pyproject.toml (root, or the workspace member
+   whose [project].name matches the given package).
+2. HARD-validate that the package declares exactly one `onedata.lambda` entry point.
+3. HARD-require that the SDK (onedata-lambda-utils) is a declared dependency; fail if not
+   (the runtime contract lives in the SDK, so every built image must ship it).
+4. Install declared system packages from `[tool.onedata.lambda] system-packages` via apt.
+5. `uv sync --frozen --no-dev --no-editable [--package <name>]`, dropped to the
+   unprivileged `app` user via gosu so the resulting venv is owned by `app`.
 
 Privilege model (gosu): apt needs root and the venv must end up app-owned. The canonical
 template elevates with `USER root` for the build step; build-lambda apts as root, then
@@ -52,6 +52,7 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
+from typing import NoReturn
 
 APP_USER = "app"
 APP_HOME = Path("/home/app")
@@ -95,7 +96,7 @@ def main() -> None:
         die(
             f"{SDK_DIST} is required but is not a declared dependency. Add it with "
             f"`build-lambda --fix`, or declare it in pyproject.toml "
-            f'(dependencies = ["{SDK_DIST}>=0.4"]).'
+            f'(dependencies = ["{SDK_DIST}>=1.0"]).'
         )
 
     require_root()
@@ -113,7 +114,7 @@ def build_root() -> Path:
     return Path.cwd()
 
 
-def resolve_package_dir(root: Path, package) -> Path:
+def resolve_package_dir(root: Path, package: str | None) -> Path:
     """Directory of the target lambda package (root for single-lambda, else the member)."""
     if not package:
         return root
@@ -185,7 +186,7 @@ def require_root() -> None:
         die(
             "build-lambda must run as root so it can install system packages and set venv "
             "ownership. Add `USER root` before `RUN build-lambda` in the Dockerfile (and "
-            "`USER app` after). The onedata-lambda CLI generates this template for you."
+            "`USER app` after)."
         )
 
 
@@ -200,7 +201,7 @@ def install_system_packages(pyproject: dict) -> None:
     run(["sh", "-c", "rm -rf /var/lib/apt/lists/*"])
 
 
-def uv_sync(root: Path, package) -> None:
+def uv_sync(root: Path, package: str | None) -> None:
     cmd = ["uv", "sync", "--frozen", "--no-dev", "--no-editable"]
     if package:
         cmd += ["--package", package]
@@ -215,7 +216,7 @@ def uv_sync(root: Path, package) -> None:
     run(cmd, cwd=root)
 
 
-def run(cmd: list, cwd=None) -> None:
+def run(cmd: list, cwd: Path | None = None) -> None:
     try:
         subprocess.run(cmd, cwd=cwd, check=True)
     except subprocess.CalledProcessError as e:
@@ -231,7 +232,7 @@ def info(msg: str) -> None:
     print(f"build-lambda: {msg}", file=sys.stderr)
 
 
-def die(msg: str, code: int = 1) -> "None":
+def die(msg: str, code: int = 1) -> NoReturn:
     print(f"build-lambda: error: {msg}", file=sys.stderr)
     sys.exit(code)
 

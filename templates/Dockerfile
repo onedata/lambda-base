@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1.7
 #
 # Canonical Dockerfile for an Onedata Automation lambda built on lambda-base v3.
-# Copy this into your lambda repo (or have `onedata-lambda eject` emit it) and do
-# NOT edit the build section -- all build logic lives in `build-lambda` inside the
-# base image, so it can evolve via a base-image bump without touching your repo.
+# Copy this into your lambda repo and do NOT edit the build section --
+# all build logic lives in `build-lambda` inside the base image, so it
+# can evolve via a base-image bump without touching your repo.
 #
 # Build:
-#   single-lambda repo:   docker build -t my-lambda:dev .
+#   single-lambda repo:    docker build -t my-lambda:dev .
 #   uv workspace member:   docker build --build-arg LAMBDA_PACKAGE=<member> -t <member>:dev .
 #
 # Requires Docker >= 23 (BuildKit) for --mount=type=bind / --mount=type=cache.

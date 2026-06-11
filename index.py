@@ -1,12 +1,11 @@
-"""Thin OpenFaaS bootstrap for Onedata Automation lambdas (lambda-base v3).
+"""Thin OpenFaaS bootstrap for Onedata Automation lambdas.
 
 This file ships *inside the base image* and is deliberately minimal and frozen: the
 lambda runtime contract lives in the SDK (`onedata-lambda-utils`), not here. The base
 only:
-
-  1. reads the raw request from stdin,
-  2. loads the single `onedata.lambda` entry point declared by the lambda package,
-  3. hands off to the SDK's `run(handler, raw)`.
+1. reads the raw request from stdin,
+2. loads the single `onedata.lambda` entry point declared by the lambda package,
+3. hands off to the SDK's `run(handler, raw)`.
 
 The SDK is required; its presence is enforced at image build time by `build-lambda`. Any
 failure here -- including, defensively, a broken SDK import -- is wrapped into a clean
@@ -22,38 +21,51 @@ import importlib.metadata as importlib_metadata
 import json
 import sys
 import traceback
+from collections.abc import Callable
 from typing import Final
 
 ENTRY_POINT_GROUP: Final[str] = "onedata.lambda"
+
+
+class LambdaBootstrapError(Exception):
+    """A known, expected bootstrap misconfiguration."""
 
 
 def main() -> None:
     raw = sys.stdin.read()
     try:
         handler = load_handler()
+
         # The SDK is required (enforced at build time); a broken import here still lands
-        # in the except below as a clean {"exception": ...} rather than a crash.
+        # in the generic `except` below as a clean {"exception": ...} envelope, not a crash.
         from onedata_lambda_utils import run
 
         output = run(handler, raw)
         sys.stdout.write(json.dumps(output))
+    except LambdaBootstrapError as error:
+        # Known misconfiguration: a one-line message is enough; a traceback is noise.
+        sys.stdout.write(json.dumps({"exception": str(error)}))
     except Exception:
+        # Unexpected failure (incl., defensively, a broken SDK import): keep the traceback.
         sys.stdout.write(json.dumps({"exception": traceback.format_exc()}))
 
 
-def load_handler():
+def load_handler() -> Callable[..., object]:
     entry_points = list(importlib_metadata.entry_points(group=ENTRY_POINT_GROUP))
 
     if not entry_points:
-        raise RuntimeError(
+        raise LambdaBootstrapError(
             f"No entry point registered in group '{ENTRY_POINT_GROUP}'. Did you "
             f'forget [project.entry-points."{ENTRY_POINT_GROUP}"] in pyproject.toml?'
         )
     if len(entry_points) > 1:
         names = ", ".join(ep.name for ep in entry_points)
-        raise RuntimeError(f"Multiple lambda entry points found ({names}); exactly one expected.")
+        raise LambdaBootstrapError(
+            f"Multiple lambda entry points found ({names}); exactly one expected."
+        )
 
-    return entry_points[0].load()
+    handler: Callable[..., object] = entry_points[0].load()
+    return handler
 
 
 if __name__ == "__main__":

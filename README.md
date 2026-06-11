@@ -7,7 +7,7 @@ lambdas — the containers that run as job executors in automation workflows.
 
 ## How it works
 
-Three layers, split by how often they change (see [`LAMBDA_V3_DESIGN.md`](./LAMBDA_V3_DESIGN.md)):
+Three layers, split by how often they change:
 
 - **base image** (this repo) — OS, Python 3.12, `uv`, the OpenFaaS watchdog, the `app` user,
   the venv environment contract, a thin SDK-free `index.py` bootstrap, and the `build-lambda`
@@ -43,7 +43,7 @@ dependency, and **exactly one** `onedata.lambda` entry point:
 name = "my-lambda"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["onedata-lambda-utils>=0.4"]
+dependencies = ["onedata-lambda-utils>=1.0"]
 
 [project.entry-points."onedata.lambda"]
 handler = "my_lambda.handler:handle"
@@ -64,7 +64,7 @@ def handle(jobs, ctx):
 Build:
 
 ```bash
-cp /path/to/lambda-base/templates/Dockerfile .   # or: onedata-lambda eject
+cp /path/to/lambda-base/templates/Dockerfile .
 docker build -t my-lambda:dev .
 ```
 
@@ -92,8 +92,8 @@ system-packages = ["libmagic1"]
 
 ## The canonical Dockerfile
 
-[`templates/Dockerfile`](./templates/Dockerfile) is the single source of truth (what
-`onedata-lambda eject` emits). You copy it once and don't touch the build section — `uv` flags,
+[`templates/Dockerfile`](./templates/Dockerfile) is the single source of truth. You copy it once
+and don't touch the build section — `uv` flags,
 the venv path and the root→`app` privilege transition all live in `build-lambda` inside the base
 image, so they evolve with a base-image bump, not a change in your repo.
 

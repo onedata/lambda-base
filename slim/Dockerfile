@@ -2,8 +2,6 @@
 FROM --platform=${TARGETPLATFORM:-linux/amd64} ghcr.io/openfaas/classic-watchdog:0.1.5 AS watchdog
 FROM --platform=${TARGETPLATFORM:-linux/amd64} python:3.12-slim
 
-ARG TARGETPLATFORM
-
 # OpenFaaS classic watchdog: bridges the HTTP request <-> the `fprocess` stdio.
 COPY --from=watchdog /fwatchdog /usr/bin/fwatchdog
 RUN chmod +x /usr/bin/fwatchdog
