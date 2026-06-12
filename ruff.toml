@@ -7,3 +7,7 @@ extend-include = ["build-lambda"]
 
 [lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[lint.isort]
+# 2 blank lines after imports, matching automation-examples (shared lambda v3 convention).
+lines-after-imports = 2

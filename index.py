@@ -24,6 +24,7 @@ import traceback
 from collections.abc import Callable
 from typing import Final
 
+
 ENTRY_POINT_GROUP: Final[str] = "onedata.lambda"
 
 

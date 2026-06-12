@@ -54,6 +54,7 @@ import tomllib
 from pathlib import Path
 from typing import NoReturn
 
+
 APP_USER = "app"
 APP_HOME = Path("/home/app")
 UV_CACHE_DIR = Path(os.environ.get("UV_CACHE_DIR") or APP_HOME / ".cache" / "uv")
