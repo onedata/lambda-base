@@ -13,7 +13,7 @@ Three layers, split by how often they change:
   the venv environment contract, a thin SDK-free `index.py` bootstrap, and the `build-lambda`
   script that encapsulates all build-time logic.
 - **SDK** ([`onedata-lambda-utils`](https://pypi.org/project/onedata-lambda-utils/)) — the
-  runtime contract (`run(handler, raw)`), the handler API (`AtmJob`, `AtmJobContext`), services
+  runtime contract (`run(handler, raw)`), the handler API (`Job`, `JobContext`), services
   (heartbeat, logger, result streaming) and test helpers. **Required** — you declare it as a
   dependency (the build fails without it); the base never installs it for you.
 - **handler** — your code: a plain function registered as the single `onedata.lambda` entry point.
@@ -22,6 +22,10 @@ At runtime the base loads your entry point and the SDK's `run(handler, raw)` dri
 failure is wrapped into a top-level `{"exception": …}` response.
 
 ## Writing a lambda
+
+This section is a quick reference. The full authoring guides — the handler API,
+testing, streaming, file access — live with the SDK, under `docs/` in
+`onedata-lambda-utils`.
 
 ### Single lambda, one repo
 
@@ -111,11 +115,13 @@ Requires Docker ≥ 23 (BuildKit) for the `--mount` directives.
 
 ## Building and publishing the base image
 
+Run `make help` for the full target list.
+
 ```bash
-make build-slim-dev        # docker.onedata.org/lambda-base-slim:v3
-make publish-slim-dev
-make build-slim-public     # onedata/lambda-base-slim:v3
-make publish-slim-public
+make build-slim-dev        # build docker.onedata.org/lambda-base-slim:v3
+make publish-slim-dev      # push it
+make build-slim-public     # build onedata/lambda-base-slim:v3
+make publish-slim-public   # push it
 make format                # ruff format + ruff check --fix
-make lint                  # ruff format --check + ruff check (CI)
+make lint                  # ruff format --check + ruff check + mypy (CI gate)
 ```

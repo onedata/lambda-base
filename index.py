@@ -39,7 +39,7 @@ def main() -> None:
 
         # The SDK is required (enforced at build time); a broken import here still lands
         # in the generic `except` below as a clean {"exception": ...} envelope, not a crash.
-        from onedata_lambda_utils import run
+        from onedata_lambda_utils import run  # noqa: PLC0415 -- lazy by design (see comment above)
 
         output = run(handler, raw)
         sys.stdout.write(json.dumps(output))
