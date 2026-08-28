@@ -37,7 +37,7 @@ publish-slim-public: ## push the slim public image
 ##@ checks
 
 # Lint/format the repo's own Python (index.py + the build-lambda script) with ruff via
-# uvx, the same toolchain as onedata-lambda-utils. Config lives in ruff.toml.
+# uvx, the same toolchain as onedata-lambda-sdk. Config lives in ruff.toml.
 format: ## ruff format + autofix
 	$(call print_target)
 	uvx ruff format .
@@ -52,7 +52,7 @@ static-analysis: ## ruff check
 	uvx ruff check .
 
 # Type-check the repo's own Python with mypy. Config lives in mypy.ini; build-lambda is
-# an extensionless script so it's passed explicitly. Mirrors onedata-lambda-utils.
+# an extensionless script so it's passed explicitly. Mirrors onedata-lambda-sdk.
 type-check: ## mypy
 	$(call print_target)
 	uvx mypy index.py build-lambda

@@ -1,7 +1,7 @@
 """Thin OpenFaaS bootstrap for Onedata Automation lambdas.
 
 This file ships *inside the base image* and is deliberately minimal and frozen: the
-lambda runtime contract lives in the SDK (`onedata-lambda-utils`), not here. The base
+lambda runtime contract lives in the SDK (`onedata-lambda-sdk`), not here. The base
 only:
 1. reads the raw request from stdin,
 2. loads the single `onedata.lambda` entry point declared by the lambda package,
@@ -39,7 +39,7 @@ def main() -> None:
 
         # The SDK is required (enforced at build time); a broken import here still lands
         # in the generic `except` below as a clean {"exception": ...} envelope, not a crash.
-        from onedata_lambda_utils import run  # noqa: PLC0415 -- lazy by design (see comment above)
+        from onedata_lambda_sdk import run  # noqa: PLC0415 -- lazy by design (see comment above)
 
         output = run(handler, raw)
         sys.stdout.write(json.dumps(output))

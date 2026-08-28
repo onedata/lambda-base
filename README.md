@@ -12,7 +12,7 @@ Three layers, split by how often they change:
 - **base image** (this repo) — OS, Python 3.12, `uv`, the OpenFaaS watchdog, the `app` user,
   the venv environment contract, a thin SDK-free `index.py` bootstrap, and the `build-lambda`
   script that encapsulates all build-time logic.
-- **SDK** ([`onedata-lambda-utils`](https://pypi.org/project/onedata-lambda-utils/)) — the
+- **SDK** ([`onedata-lambda-sdk`](https://pypi.org/project/onedata-lambda-sdk/)) — the
   runtime contract (`run(handler, raw)`), the handler API (`Job`, `JobContext`), services
   (heartbeat, logger, result streaming) and test helpers. **Required** — you declare it as a
   dependency (the build fails without it); the base never installs it for you.
@@ -25,7 +25,7 @@ failure is wrapped into a top-level `{"exception": …}` response.
 
 This section is a quick reference. The full authoring guides — the handler API,
 testing, streaming, file access — live with the SDK, under `docs/` in
-`onedata-lambda-utils`.
+`onedata-lambda-sdk`.
 
 ### Single lambda, one repo
 
@@ -39,7 +39,7 @@ my-lambda/
     └── handler.py
 ```
 
-`pyproject.toml` — the hard requirements are a package name, the `onedata-lambda-utils`
+`pyproject.toml` — the hard requirements are a package name, the `onedata-lambda-sdk`
 dependency, and **exactly one** `onedata.lambda` entry point:
 
 ```toml
@@ -47,7 +47,7 @@ dependency, and **exactly one** `onedata.lambda` entry point:
 name = "my-lambda"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["onedata-lambda-utils>=1.0"]
+dependencies = ["onedata-lambda-sdk>=1.0"]
 
 [project.entry-points."onedata.lambda"]
 handler = "my_lambda.handler:handle"

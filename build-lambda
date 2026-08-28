@@ -27,7 +27,7 @@ What it does (build mode, must run as root):
 1. Resolve the target lambda package's pyproject.toml (root, or the workspace member
    whose [project].name matches the given package).
 2. HARD-validate that the package declares exactly one `onedata.lambda` entry point.
-3. HARD-require that the SDK (onedata-lambda-utils) is a declared dependency; fail if not
+3. HARD-require that the SDK (onedata-lambda-sdk) is a declared dependency; fail if not
    (the runtime contract lives in the SDK, so every built image must ship it).
 4. Install declared system packages from `[tool.onedata.lambda] system-packages` via apt.
 5. `uv sync --frozen --no-dev --no-editable [--package <name>]`, dropped to the
@@ -59,7 +59,7 @@ APP_USER = "app"
 APP_HOME = Path("/home/app")
 UV_CACHE_DIR = Path(os.environ.get("UV_CACHE_DIR") or APP_HOME / ".cache" / "uv")
 ENTRY_POINT_GROUP = "onedata.lambda"
-SDK_DIST = "onedata-lambda-utils"
+SDK_DIST = "onedata-lambda-sdk"
 
 
 def main() -> None:
