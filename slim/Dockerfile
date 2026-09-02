@@ -1,33 +1,47 @@
+# syntax=docker/dockerfile:1.7
 FROM --platform=${TARGETPLATFORM:-linux/amd64} ghcr.io/openfaas/classic-watchdog:0.1.5 AS watchdog
-FROM --platform=${TARGETPLATFORM:-linux/amd64} python:3.10-slim
+FROM --platform=${TARGETPLATFORM:-linux/amd64} python:3.12-slim
 
-ARG TARGETPLATFORM
-
+# OpenFaaS classic watchdog: bridges the HTTP request <-> the `fprocess` stdio.
 COPY --from=watchdog /fwatchdog /usr/bin/fwatchdog
 RUN chmod +x /usr/bin/fwatchdog
 
-# Add non root user
-RUN addgroup --system app && adduser --system --ingroup app app
+# uv: the canonical installer/resolver. Kept in the *runtime* image (single-stage)
+# so `build-lambda` can run `uv sync` during a lambda build, and so the image is a
+# usable debugging environment (`docker run -it lambda-base-slim:v3 bash`).
+# Pinned for reproducible base builds; bump deliberately.
+COPY --from=ghcr.io/astral-sh/uv:0.11.19 /uv /usr/local/bin/uv
 
-RUN mkdir -p /home/app/python && \
-    chown -R app:app /home/app
+# gosu: lets `build-lambda` perform the apt-as-root -> uv-sync-as-app privilege
+# transition for declarative system-packages within a single RUN.
+RUN set -eux \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root runtime user.
+RUN addgroup --system app \
+    && adduser --system --ingroup app app \
+    && mkdir -p /home/app \
+    && chown -R app:app /home/app
+
+# Build-time logic (uv flags, venv path, system-packages, privilege drop) is
+# encapsulated in this script so per-lambda Dockerfiles never see it.
+COPY build-lambda /usr/local/bin/build-lambda
+RUN chmod +x /usr/local/bin/build-lambda
 
 USER app
+WORKDIR /home/app
 
-ENV PATH=$PATH:/home/app/.local/bin:/home/app/python/bin/
-ENV PYTHONPATH=$PYTHONPATH:/home/app/python
+# Thin, SDK-free runtime bootstrap (variant 2'); the frozen base<->entry-point seam.
+COPY --chown=app:app index.py ./
 
-WORKDIR /home/app/
-
-COPY --chown=app:app index.py requirements.txt ./
-RUN python3 -m pip install --no-cache-dir -r requirements.txt -t /home/app/python
-
-RUN mkdir -p function && touch ./function/__init__.py
-
-# Copy required handler.py and optional requirements.txt if it exists 
-# ('*' regex hack prevent build failure if file does not exist)
-ONBUILD COPY --chown=app:app handler.py *requirements.txt function/
-ONBUILD RUN if [ -e function/requirements.txt ]; then python3 -m pip install --no-cache-dir -r function/requirements.txt -t /home/app/python; else echo "No additional dependencies specified"; fi
+# Runtime environment contract: the lambda venv lives at a fixed path and is first
+# on PATH, so `python3` resolves to the venv interpreter that `build-lambda` populates.
+# Set here (in the base) so per-lambda Dockerfiles carry no ENV of their own.
+ENV UV_PROJECT_ENVIRONMENT="/home/app/.venv"
+ENV VIRTUAL_ENV="/home/app/.venv"
+ENV PATH="/home/app/.venv/bin:$PATH"
 
 ENV fprocess="python3 index.py"
 EXPOSE 8080

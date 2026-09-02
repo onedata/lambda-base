@@ -1,223 +1,73 @@
-__copyright__ = "Copyright (C) 2022-2023 ACK CYFRONET AGH"
-__license__ = "MIT license cited in 'LICENSE.txt'."
+"""Thin OpenFaaS bootstrap for Onedata Automation lambdas.
 
-import io
+This file ships *inside the base image* and is deliberately minimal and frozen: the
+lambda runtime contract lives in the SDK (`onedata-lambda-sdk`), not here. The base
+only:
+1. reads the raw request from stdin,
+2. loads the single `onedata.lambda` entry point declared by the lambda package,
+3. hands off to the SDK's `run(handler, raw)`.
+
+The SDK is required; its presence is enforced at image build time by `build-lambda`. Any
+failure here -- including, defensively, a broken SDK import -- is wrapped into a clean
+top-level `{"exception": ...}` envelope rather than an opaque watchdog error,
+consistent with Oneprovider's lambda error model.
+"""
+
+__author__ = "Bartosz Walkowicz"
+__copyright__ = "Copyright (C) 2026 Onedata (onedata.org)"
+__license__ = "This software is released under the MIT license cited in LICENSE.txt"
+
+import importlib.metadata as importlib_metadata
 import json
-import os
 import sys
-import time
 import traceback
-import uuid
-from datetime import datetime
-
-import requests
-
-VERIFY_SSL_CERTS = os.getenv("VERIFY_SSL_CERTIFICATES") == "true"
-DEBUG_MODE = os.getenv("OPENFAAS_FUNCTION_DEBUG_MODE") == "true"
-ONECLIENT_MOUNTED = os.getenv("ONECLIENT_MOUNTED") == "true"
-ONECLIENT_MOUNT_POINT = os.getenv("ONECLIENT_MOUNT_POINT")
-
-HEARTBEAT_TIMEOUT_SEC = 10
-
-FIRST_HEARTBEAT_RETRIES = 10
-FIRST_HEARTBEAT_RETRY_DELAY_SEC = 5
-
-MOUNT_POINT_TIMEOUT = 120
-MOUNT_POINT_TIMEOUT_INTERVAL = 0.5
+from collections.abc import Callable
+from typing import Final
 
 
-class FirstHeartbeatDeliveryFailedError(Exception):
-    pass
+ENTRY_POINT_GROUP: Final[str] = "onedata.lambda"
 
 
-class OneclientMountError(Exception):
-    pass
+class LambdaBootstrapError(Exception):
+    """A known, expected bootstrap misconfiguration."""
 
 
-def handle_request():
-    # Redirect stdout/stderr to /tmp/lambda.out to not incorporate accidental prints
-    # into response (OpenFaaS treats anything written to stdout/stderr as part
-    # of a response).
-    tmp_out = open("/tmp/lambda.out", "a")
-    tmp_out_fd = tmp_out.fileno()
-
-    stdout_fd = sys.stdout.fileno()
-    stdout_fd_dup = os.dup(stdout_fd)
-    os.dup2(tmp_out_fd, stdout_fd)  # $ exec >&tmp_out_fd
-
-    stderr_fd = sys.stderr.fileno()
-    os.dup2(tmp_out_fd, stderr_fd)  # $ exec 2>&tmp_out_fd
-
-    stdout_dup = io.TextIOWrapper(os.fdopen(stdout_fd_dup, "wb"))
-
-    job_id = uuid.uuid4()
-    log("info", job_id, "Started request processing")
-
-    if DEBUG_MODE:
-        log("debug", job_id, "Lambda is running in debug mode")
-
+def main() -> None:
+    raw = sys.stdin.read()
     try:
+        handler = load_handler()
 
-        validate_oneclient_mount(job_id)
+        # The SDK is required (enforced at build time); a broken import here still lands
+        # in the generic `except` below as a clean {"exception": ...} envelope, not a crash.
+        from onedata_lambda_sdk import run  # noqa: PLC0415 -- lazy by design (see comment above)
 
-        request = json.loads(read_stdin())
+        output = run(handler, raw)
+        sys.stdout.write(json.dumps(output))
+    except LambdaBootstrapError as error:
+        # Known misconfiguration: a one-line message is enough; a traceback is noise.
+        sys.stdout.write(json.dumps({"exception": str(error)}))
+    except Exception:
+        # Unexpected failure (incl., defensively, a broken SDK import): keep the traceback.
+        sys.stdout.write(json.dumps({"exception": traceback.format_exc()}))
 
-        log_level = request["ctx"].get("logLevel", "info")
-        os.environ["ATM_LOG_LEVEL"] = log_level
 
-        if log_level == "debug":
-            log("debug", job_id, f"Input: {request}")
+def load_handler() -> Callable[..., object]:
+    entry_points = list(importlib_metadata.entry_points(group=ENTRY_POINT_GROUP))
 
-        heartbeat_callback = build_heartbeat_callback(job_id, request["ctx"])
-
-        # IMPORTANT: first heatbeat must be sent immediately after spawn
-        # to inform Oneprovider that given job began executing
-        ensure_first_heartbeat_delivered(job_id, heartbeat_callback)
-
-        log("info", job_id, "Calling handler callback")
-
-        # handler is a module user provides when building final lambda image
-        # (using lambda-base as parent image)
-        from function import handler
-
-        result = handler.handle(request, heartbeat_callback)
-
-        if log_level == "debug":
-            log("debug", job_id, f"Output: {request}")
-
-        log("info", job_id, "Ended request processing")
-
-        print(json.dumps(result), file=stdout_dup)
-
-    except FirstHeartbeatDeliveryFailedError:
-        log(
-            "error",
-            job_id,
-            f"Request processing failed due to failure to deliver first heartbeat",
+    if not entry_points:
+        raise LambdaBootstrapError(
+            f"No entry point registered in group '{ENTRY_POINT_GROUP}'. Did you "
+            f'forget [project.entry-points."{ENTRY_POINT_GROUP}"] in pyproject.toml?'
         )
-        print(
-            json.dumps({"exception": "Failed to deliver first heartbeat"}),
-            file=stdout_dup,
+    if len(entry_points) > 1:
+        names = ", ".join(ep.name for ep in entry_points)
+        raise LambdaBootstrapError(
+            f"Multiple lambda entry points found ({names}); exactly one expected."
         )
 
-    except OneclientMountError:
-        log(
-            "error",
-            job_id,
-            f"Request processing failed due to failure to mount Oneclient",
-        )
-        print(json.dumps({"exception": "Failed to mount Oneclient"}), file=stdout_dup)
-
-    except Exception as ex:
-        log(
-            "error",
-            job_id,
-            f"Request processing failed with unexpected exception: {ex}",
-        )
-        print(json.dumps({"exception": traceback.format_exc()}), file=stdout_dup)
-
-
-def build_heartbeat_callback(job_id, ctx):
-    heartbeat_url = ctx["heartbeatUrl"]
-    throttle_period = 0.1 * ctx["timeoutSeconds"]
-    last_heartbeat_timestamp = 0
-
-    def heartbeat(*, timeout=HEARTBEAT_TIMEOUT_SEC) -> bool:
-        nonlocal last_heartbeat_timestamp
-
-        current_time = int(time.time())
-        if current_time - last_heartbeat_timestamp > throttle_period:
-            r = requests.post(
-                url=heartbeat_url, data={}, timeout=timeout, verify=VERIFY_SSL_CERTS
-            )
-            if r.ok:
-                last_heartbeat_timestamp = current_time
-                log("info", job_id, "Heartbeat sent")
-                return True
-            else:
-                log(
-                    "warning",
-                    job_id,
-                    f"Failed to send heartbeat due to:\n"
-                    f"> response code: {r.status_code}\n"
-                    f"> response content: {r.content}",
-                )
-                return False
-
-    return heartbeat
-
-
-def ensure_first_heartbeat_delivered(job_id, heartbeat_callback):
-    log("info", job_id, "Sending first heartbeat")
-    for _ in range(FIRST_HEARTBEAT_RETRIES):
-        if heartbeat_callback():
-            break
-
-        time.sleep(FIRST_HEARTBEAT_RETRY_DELAY_SEC)
-    else:
-        raise FirstHeartbeatDeliveryFailedError
-
-
-def validate_oneclient_mount(job_id):
-    if ONECLIENT_MOUNTED:
-        log(
-            "info",
-            job_id,
-            f"This lambda is using Oneclient; mountpoint: {ONECLIENT_MOUNT_POINT}",
-        )
-        # wait for oneclient mounting
-        if not await_oneclient_mounted():
-            log("error", job_id, f"Did not manage to mount Oneclient")
-            raise OneclientMountError
-        else:
-            log(
-                "info",
-                job_id,
-                f"Oneclient mount point content: {list_mountpoint()}",
-            )
-    else:
-        log("info", job_id, "This lambda is not using Oneclient")
-
-
-def await_oneclient_mounted():
-    retries = int(MOUNT_POINT_TIMEOUT / MOUNT_POINT_TIMEOUT_INTERVAL)
-    mount_point_content = list_mountpoint()
-    while not mount_point_content and retries > 0:
-        time.sleep(MOUNT_POINT_TIMEOUT_INTERVAL)
-        mount_point_content = list_mountpoint()
-        retries -= 1
-    return any(mount_point_content)
-
-
-def list_mountpoint():
-    return os.listdir(ONECLIENT_MOUNT_POINT)
-
-
-def log(severity, job_id, msg):
-    print(
-        "[",
-        severity.upper(),
-        " ",
-        datetime.now().strftime("%m/%d/%Y, %H:%M:%S:%f"),
-        " ",
-        job_id,
-        "] ",
-        msg,
-        sep="",
-    )
-
-
-def read_stdin():
-    buf = ""
-    while True:
-        line = sys.stdin.readline()
-        if line == "":
-            break
-
-        buf += line
-
-    return buf
+    handler: Callable[..., object] = entry_points[0].load()
+    return handler
 
 
 if __name__ == "__main__":
-    handle_request()
+    main()
