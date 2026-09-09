@@ -31,7 +31,8 @@ What it does (build mode, must run as root):
    (the runtime contract lives in the SDK, so every built image must ship it).
 4. Install declared system packages from `[tool.onedata.lambda] system-packages` via apt.
 5. `uv sync --frozen --no-dev --no-editable [--package <name>]`, dropped to the
-   unprivileged `app` user via gosu so the resulting venv is owned by `app`.
+   unprivileged `app` user via gosu so the resulting venv is owned by `app`. Every local
+   (workspace) package is passed to `--refresh-package` -- see `uv_sync` for why.
 
 Privilege model (gosu): apt needs root and the venv must end up app-owned. The canonical
 template elevates with `USER root` for the build step; build-lambda apts as root, then
@@ -51,6 +52,7 @@ import os
 import subprocess
 import sys
 import tomllib
+from collections.abc import Iterator
 from pathlib import Path
 from typing import NoReturn
 
@@ -120,23 +122,37 @@ def resolve_package_dir(root: Path, package: str | None) -> Path:
     if not package:
         return root
 
-    root_pp = load_pyproject(root / "pyproject.toml")
-    members = root_pp.get("tool", {}).get("uv", {}).get("workspace", {}).get("members", [])
-    if not members:
+    patterns = workspace_member_patterns(root)
+    if not patterns:
         die(
             f"--package {package!r} given but root pyproject declares no "
             f"[tool.uv.workspace] members"
         )
 
-    for pattern in members:
+    for name, member_dir in iter_workspace_members(root):
+        if name == package:
+            return member_dir
+
+    die(f"workspace member {package!r} not found among members {patterns}")
+
+
+def iter_workspace_members(root: Path) -> Iterator[tuple[str, Path]]:
+    """(project name, directory) of every workspace member that declares a [project] name."""
+    for pattern in workspace_member_patterns(root):
         for member_dir in sorted(root.glob(pattern)):
             member_pp = member_dir / "pyproject.toml"
             if not member_pp.is_file():
                 continue
-            if load_pyproject(member_pp).get("project", {}).get("name") == package:
-                return member_dir
+            name = load_pyproject(member_pp).get("project", {}).get("name")
+            if name:
+                yield name, member_dir
 
-    die(f"workspace member {package!r} not found among members {members}")
+
+def workspace_member_patterns(root: Path) -> list[str]:
+    """The [tool.uv.workspace] member globs declared by the root pyproject (may be empty)."""
+    root_pp = load_pyproject(root / "pyproject.toml")
+    members = root_pp.get("tool", {}).get("uv", {}).get("workspace", {}).get("members", [])
+    return list(members)
 
 
 def load_pyproject(path: Path) -> dict:
@@ -203,9 +219,34 @@ def install_system_packages(pyproject: dict) -> None:
 
 
 def uv_sync(root: Path, package: str | None) -> None:
+    # The three flags that define what lands in the runtime image:
+    #   --frozen       install exactly what uv.lock pins, without re-resolving or rewriting
+    #                  it -- the image then matches what was locked, tested and reviewed
+    #                  (and the bind-mounted context is read-only anyway).
+    #   --no-dev       omit the `dev` dependency group; pytest/ruff/mypy belong in the
+    #                  developer's workspace venv, not in a production lambda image.
+    #   --no-editable  install local packages as built wheels copied into site-packages.
+    #                  uv installs the project and workspace members as *editable* by
+    #                  default, which only writes a .pth pointing back at the source --
+    #                  here that source is /build, a bind mount that ceases to exist when
+    #                  the RUN ends, so the lambda would be unimportable in the image.
     cmd = ["uv", "sync", "--frozen", "--no-dev", "--no-editable"]
+
+    # Restrict the sync to this member's dependency subtree, so a lambda image carries only
+    # its own dependencies rather than every sibling's in the workspace.
     if package:
         cmd += ["--package", package]
+
+    # Local packages are built from the bind-mounted source tree into a wheel that uv keeps
+    # in its cache -- which the canonical Dockerfile mounts as a build-persistent cache. uv
+    # revalidates a path source against its pyproject.toml alone, so editing only source
+    # files would silently reuse the stale cached wheel and ship the previous code. Refresh
+    # them explicitly; the (much larger) cache of fetched third-party wheels is untouched.
+    local = local_package_names(root)
+    if local:
+        info(f"refreshing {len(local)} local package(s) built from the source tree")
+        for name in local:
+            cmd += ["--refresh-package", name]
 
     # Make the (root-created) cache mount writable by app, then drop privileges so the
     # venv at UV_PROJECT_ENVIRONMENT is owned by app.
@@ -215,6 +256,18 @@ def uv_sync(root: Path, package: str | None) -> None:
     cmd = ["gosu", APP_USER, "env", f"HOME={APP_HOME}", *cmd]
     info(f"running: {' '.join(cmd)} (cwd={root})")
     run(cmd, cwd=root)
+
+
+def local_package_names(root: Path) -> list[str]:
+    """Packages built from the source tree rather than fetched: the workspace members
+    (plus the root itself in a single-lambda repo)."""
+    names = {name for name, _ in iter_workspace_members(root)}
+
+    root_name = load_pyproject(root / "pyproject.toml").get("project", {}).get("name")
+    if root_name:
+        names.add(root_name)
+
+    return sorted(names)
 
 
 def run(cmd: list, cwd: Path | None = None) -> None:
